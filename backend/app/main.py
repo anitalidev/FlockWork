@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -15,7 +16,7 @@ from .auth import current_email, current_user
 from .database import Base, engine, get_db
 from .privacy import aggregate_heat_points
 
-Base.metadata.create_all(bind=engine)  # creates tables on startup
+logger = logging.getLogger("flockwork")
 
 # create_all() never adds columns to an existing table, so add the profile columns
 # to databases created before they existed (no need to delete ubchub.db).
@@ -31,7 +32,22 @@ def _add_missing_profile_columns() -> None:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {kind} NOT NULL DEFAULT {default}"))
 
 
-_add_missing_profile_columns()
+def _init_schema() -> str | None:
+    """Create/upgrade tables. Returns an error message instead of crashing the process,
+    so the health check still answers and the real database error shows up in the logs."""
+    try:
+        Base.metadata.create_all(bind=engine)  # creates tables on startup
+        _add_missing_profile_columns()
+        return None
+    except Exception as exc:  # noqa: BLE001 - surface any DB failure in logs and /health/db
+        logger.exception("Database setup failed; check DATABASE_URL and that the database is reachable")
+        return f"{type(exc).__name__}: {exc}"
+
+
+if not os.getenv("DATABASE_URL"):
+    logger.warning("DATABASE_URL is not set: using a local SQLite file, which is wiped on every redeploy")
+
+DB_INIT_ERROR = _init_schema()
 
 # Comma-separated list in .env overrides the default.
 CORS_ORIGINS = [o.strip() for o in os.getenv(
@@ -56,6 +72,19 @@ app.include_router(projects_router)  # /projects/teammates: who can teach a proj
 @app.get("/")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/health/db")
+def health_db():
+    """Deployment check: does the API reach its database?"""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Database unreachable: {type(exc).__name__}")
+    if DB_INIT_ERROR:
+        raise HTTPException(503, "Database reachable but schema setup failed at startup; see logs")
+    return {"database": "ok", "engine": engine.dialect.name}
 
 
 # ---------- Users ----------
@@ -222,10 +251,8 @@ def _presence_cutoff() -> datetime:
 
 
 def _prune_presence(db: Session) -> None:
-    # TEMPORARY, DEMO ONLY: skip the expiry check so each person's most recent point stays on the map.
-    # Restore the original line below (and delete the `return`) after the demo.
-    return
-    # db.query(models.Presence).filter(models.Presence.updated_at < _presence_cutoff()).delete(synchronize_session=False)
+    """Drop locations older than PRESENCE_TTL_SECONDS so the heatmap only shows active students."""
+    db.query(models.Presence).filter(models.Presence.updated_at < _presence_cutoff()).delete(synchronize_session=False)
 
 
 def _check_coord(lat: float, lng: float) -> None:

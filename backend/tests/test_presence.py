@@ -24,3 +24,30 @@ def test_presence_persists_until_explicit_delete_and_rejects_out_of_range():
     assert client.post('/presence', json={'lat': 91, 'lng': 0}).status_code == 400
     assert client.delete('/presence').json()['sharing'] is False
     assert client.get('/presence/me').json()['sharing'] is False
+
+
+def test_stale_presence_expires_after_ttl():
+    from datetime import datetime, timedelta
+    from app import models
+    from app.database import SessionLocal
+    from app.main import PRESENCE_TTL_SECONDS
+    EMAIL['value'] = 'stale@student.ubc.ca'
+    profile()
+    assert client.post('/presence', json={'lat': 49.26, 'lng': -123.25}).status_code == 200
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter_by(email='stale@student.ubc.ca').one()
+        row = db.get(models.Presence, user.id)
+        row.updated_at = datetime.utcnow() - timedelta(seconds=PRESENCE_TTL_SECONDS + 5)
+        db.commit()
+    finally:
+        db.close()
+    assert client.get('/presence/me').json()['sharing'] is False
+    assert client.get('/presence/heatmap').json()['active_students'] == 0
+    EMAIL['value'] = 'presence@student.ubc.ca'
+
+
+def test_database_health_check():
+    r = client.get('/health/db')
+    assert r.status_code == 200
+    assert r.json()['database'] == 'ok'

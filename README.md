@@ -6,9 +6,64 @@ A warm, student-centered community platform built for HackCamp 2026. Flockwork h
 
 ## Current scope
 
-This branch implements a responsive, accessible marketing landing page using React, TypeScript, Lora, DM Sans, and Lucide icons on the DeepSpace scaffold. The Buddies and SkillShare previews, activity heatmap, and profile artwork are illustrative—not live product or student data.
+Flockwork is a full-stack app: a React/TypeScript frontend hosted on DeepSpace and a FastAPI backend.
 
-The university-email dialog is an honest frontend prototype. It checks the backend's currently permitted UBC domains in the browser and explicitly confirms that no email is sent and no account is created. It must not be described as real student verification. The neutral `Log In` button currently opens the same prototype; wire it to the authenticated app separately.
+- **Sign-in:** Auth0 passwordless email login (`/auth`). The backend verifies each token's signature, issuer and audience, and only accepts verified UBC email addresses.
+- **Buddies and SkillShare:** swipe decks ranked by compatibility, with mutual-like matching.
+- **Projects:** create, browse and delete listings (only the owner can delete), plus teammate discovery by skill.
+- **Messaging:** private conversations between matched students.
+- **Campus activity heatmap:** opt-in location sharing, aggregated into broad areas so no one's exact location is shown. A shared location expires after 3 minutes (`PRESENCE_TTL_SECONDS`).
+
+The previews and artwork on the public landing page are illustrative, not live student data.
+
+## Deployment
+
+| Part | Host | Check |
+|---|---|---|
+| Frontend | DeepSpace, `https://flockwork.app.space` | Page loads and `/api/client-config` returns JSON |
+| Backend | Railway (Vultr guide in `deploy/vultr/`) | `/` returns `{"status":"ok"}`, `/health/db` returns `{"database":"ok"}` |
+| Auth | Auth0 | Login on the live site reaches the dashboard |
+
+### Backend (Railway)
+
+Set the service's root directory to `backend`. `backend/Procfile` starts the API with:
+
+```sh
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+Required variables:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Persistent PostgreSQL URL. If unset, the API falls back to a local SQLite file that is wiped on every redeploy (a warning is logged). |
+| `AUTH0_DOMAIN` | Auth0 hostname, without `https://` |
+| `AUTH0_AUDIENCE` | The Auth0 API identifier (same value as the frontend) |
+| `CORS_ORIGINS` | Frontend origins, comma-separated, e.g. `https://flockwork.app.space` |
+| `GEMINI_API_KEY` | Optional, for AI listing tools |
+
+If the database is unreachable at startup, the API still starts: `/` answers, `/health/db` returns 503, and the real error is in the logs.
+
+### Frontend (DeepSpace)
+
+The deployed worker needs `VITE_API_URL` (the backend URL), `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID` and `VITE_AUTH0_AUDIENCE` at runtime, not only in a local `.env`. Never put a client secret there.
+
+### Auth0
+
+- Allowed callback URL: `https://flockwork.app.space/auth`
+- Allowed logout URL: `https://flockwork.app.space`
+- Passwordless connection: `email`; scopes `openid profile email`
+- Frontend and backend must use the same tenant and API audience.
+
+### Definition of working
+
+1. Backend `/` and `/health/db` both succeed.
+2. The frontend and `/api/client-config` load.
+3. Signed out, `/me` returns 401.
+4. A verified test user can create and read their profile.
+5. Two test accounts can match, and one cannot delete the other's project.
+6. A shared location shows on the heatmap, can be removed, and expires.
+7. Data survives a backend redeploy.
 
 ## Frontend-only local preview
 
