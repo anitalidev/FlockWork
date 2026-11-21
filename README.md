@@ -1,4 +1,4 @@
-# Flockwork
+# Flockwork:
 
 A warm, student-centered community platform built for HackCamp 2026. Flockwork helps students find study partners and friends, exchange skills, and discover project collaborators.
 
