@@ -1,6 +1,13 @@
 import type { Hono } from 'hono'
 import type { AppContext } from '../../worker.js'
 
+type ClientConfigEnv = {
+  VITE_API_URL?: string
+  VITE_AUTH0_DOMAIN?: string
+  VITE_AUTH0_CLIENT_ID?: string
+  VITE_AUTH0_AUDIENCE?: string
+}
+
 function httpsUrl(value: string | undefined): string | null {
   if (!value) return null
   try {
@@ -10,13 +17,19 @@ function httpsUrl(value: string | undefined): string | null {
 }
 
 /** Public SPA configuration only. No provider secret is eligible for this route. */
+export function clientConfigResponse(env: ClientConfigEnv): Response {
+  const apiUrl = httpsUrl(env.VITE_API_URL)
+  const auth0Domain = env.VITE_AUTH0_DOMAIN?.trim()
+  const auth0ClientId = env.VITE_AUTH0_CLIENT_ID?.trim()
+  const auth0Audience = env.VITE_AUTH0_AUDIENCE?.trim() || undefined
+  const headers = { 'Cache-Control': 'no-store' }
+
+  if (!apiUrl || !auth0Domain || !auth0ClientId) {
+    return Response.json({ error: 'Public app configuration unavailable' }, { status: 503, headers })
+  }
+  return Response.json({ apiUrl, auth0Domain, auth0ClientId, auth0Audience }, { headers })
+}
+
 export function registerClientConfigRoute(app: Hono<AppContext>): void {
-  app.get('/api/client-config', (c) => {
-    const apiUrl = httpsUrl(c.env.VITE_API_URL)
-    const domain = c.env.VITE_AUTH0_DOMAIN?.trim()
-    const clientId = c.env.VITE_AUTH0_CLIENT_ID?.trim()
-    const audience = c.env.VITE_AUTH0_AUDIENCE?.trim()
-    if (!apiUrl || !domain || !clientId) return c.json({ error: 'Public app configuration unavailable' }, 503)
-    return c.json({ apiUrl, auth0Domain: domain, auth0ClientId: clientId, auth0Audience: audience || undefined }, { headers: { 'Cache-Control': 'no-store' } })
-  })
+  app.get('/api/client-config', (c) => clientConfigResponse(c.env))
 }
