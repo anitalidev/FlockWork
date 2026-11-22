@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "outputDirectory": "dist/client",
+  "routes": [
+    { "handle": "filesystem" },
+    {
+      "src": "^/(?!api(?:/|$)|_deepspace(?:/|$)|assets(?:/|$))[^.]+$",
+      "methods": ["GET", "HEAD"],
+      "dest": "/_spa.html"
+    }
+  ]
+}
